@@ -73,6 +73,8 @@ fn run(args: cli::RunArgs) -> Result<()> {
     let templates = matcher::load_templates(&args.buy, args.templates_dir.as_deref())?;
     let matcher = matcher::Matcher::new(templates, args.threshold, matcher::default_column());
 
+    let anchor = matcher::Anchor::refresh_button()?;
+
     let stop = Arc::new(AtomicBool::new(false));
     install_ctrlc(stop.clone(), adb.clone());
 
@@ -101,7 +103,7 @@ fn run(args: cli::RunArgs) -> Result<()> {
         tap_sleep: Duration::from_secs_f64(args.tap_sleep),
         jitter: args.jitter,
     };
-    let summary = shop::Runner::new(adb, matcher, cfg, stop, history).run()?;
+    let summary = shop::Runner::new(adb, matcher, anchor, cfg, stop, history).run()?;
 
     let secs = summary.duration.as_secs();
     let what = if args.dry_run { "detected" } else { "bought" };

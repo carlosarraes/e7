@@ -23,8 +23,10 @@ pub fn embedded(item: Item) -> &'static [u8] {
     }
 }
 
-pub struct Template {
-    pub item: Item,
+const REFRESH_BUTTON: &[u8] = include_bytes!("../assets/refresh.png");
+
+/// A template prepared for normalized cross-correlation.
+pub struct Pattern {
     pub w: u32,
     pub h: u32,
     /// RGB interleaved, per-channel mean subtracted.
@@ -32,17 +34,17 @@ pub struct Template {
     norm: f32,
 }
 
-impl Template {
-    pub fn from_png(item: Item, bytes: &[u8]) -> Result<Self> {
+impl Pattern {
+    pub fn from_png(bytes: &[u8], what: &str) -> Result<Self> {
         let img = image::load_from_memory(bytes)
-            .with_context(|| format!("decode {} template", item.key()))?
+            .with_context(|| format!("decode {what} template"))?
             .to_rgb8();
-        Self::from_image(item, &img)
+        Self::from_image(&img, what)
     }
 
-    pub fn from_image(item: Item, img: &RgbImage) -> Result<Self> {
+    pub fn from_image(img: &RgbImage, what: &str) -> Result<Self> {
         let (w, h) = img.dimensions();
-        ensure!(w > 0 && h > 0, "empty template for {}", item.key());
+        ensure!(w > 0 && h > 0, "empty template for {what}");
         let n = (w * h) as f32;
         let raw = img.as_raw();
         let mut mean = [0f32; 3];
@@ -61,11 +63,24 @@ impl Template {
             .collect();
         let norm = zero_mean.iter().map(|v| v * v).sum::<f32>().sqrt();
         Ok(Self {
-            item,
             w,
             h,
             zero_mean,
             norm,
+        })
+    }
+}
+
+pub struct Template {
+    pub item: Item,
+    pub pattern: Pattern,
+}
+
+impl Template {
+    pub fn from_png(item: Item, bytes: &[u8]) -> Result<Self> {
+        Ok(Self {
+            item,
+            pattern: Pattern::from_png(bytes, item.key())?,
         })
     }
 }
@@ -116,7 +131,7 @@ impl Matcher {
     pub fn scan<'a>(&'a self, screen: &RgbImage) -> Scan<'a> {
         Scan {
             matcher: self,
-            strip: Strip::new(screen, &self.col),
+            strip: Strip::new(screen, self.col.clone(), 0..screen.height()),
         }
     }
 
@@ -140,17 +155,57 @@ impl Scan<'_> {
     pub fn best(&self, item: Item) -> Option<Hit> {
         let tpl = self.matcher.template(item)?;
         self.strip
-            .scores(tpl)
-            .into_iter()
-            .max_by(|a, b| a.score.total_cmp(&b.score))
+            .best(&tpl.pattern)
+            .map(|(x, y, score)| Hit { item, x, y, score })
     }
 }
 
-/// The searched column as f32 RGB plus per-channel integral tables of sum and
-/// sum-of-squares, so each window's variance is O(1) and only the dot product
-/// costs O(template).
+/// A fixed UI element whose presence identifies a screen (the shop's Refresh button).
+pub struct Anchor {
+    pattern: Pattern,
+    xs: Range<u32>,
+    ys: Range<u32>,
+    threshold: f32,
+}
+
+impl Anchor {
+    pub fn new(pattern: Pattern, xs: Range<u32>, ys: Range<u32>, threshold: f32) -> Self {
+        Self {
+            pattern,
+            xs,
+            ys,
+            threshold,
+        }
+    }
+
+    /// The "Refresh" label on the shop's refresh button, bottom-left of the screen.
+    pub fn refresh_button() -> Result<Self> {
+        Ok(Self::new(
+            Pattern::from_png(REFRESH_BUTTON, "refresh button")?,
+            280..540,
+            940..1040,
+            0.75,
+        ))
+    }
+
+    pub fn score(&self, screen: &RgbImage) -> f32 {
+        Strip::new(screen, self.xs.clone(), self.ys.clone())
+            .best(&self.pattern)
+            .map(|(_, _, s)| s)
+            .unwrap_or(0.0)
+    }
+
+    pub fn visible(&self, screen: &RgbImage) -> bool {
+        self.score(screen) >= self.threshold
+    }
+}
+
+/// A rectangular search region as f32 RGB plus per-channel integral tables of
+/// sum and sum-of-squares, so each window's variance is O(1) and only the dot
+/// product costs O(template).
 struct Strip {
     x0: u32,
+    y0: u32,
     w: usize,
     h: usize,
     px: Vec<f32>,
@@ -159,13 +214,15 @@ struct Strip {
 }
 
 impl Strip {
-    fn new(screen: &RgbImage, col: &Range<u32>) -> Self {
-        let x0 = col.start.min(screen.width());
-        let x1 = col.end.min(screen.width());
+    fn new(screen: &RgbImage, xs: Range<u32>, ys: Range<u32>) -> Self {
+        let x0 = xs.start.min(screen.width());
+        let x1 = xs.end.min(screen.width());
+        let y0 = ys.start.min(screen.height());
+        let y1 = ys.end.min(screen.height());
         let w = (x1 - x0) as usize;
-        let h = screen.height() as usize;
+        let h = (y1 - y0) as usize;
         let mut px = Vec::with_capacity(w * h * 3);
-        for y in 0..h as u32 {
+        for y in y0..y1 {
             for x in x0..x1 {
                 px.extend(screen.get_pixel(x, y).0.iter().map(|&v| v as f32));
             }
@@ -189,6 +246,7 @@ impl Strip {
         }
         Self {
             x0,
+            y0,
             w,
             h,
             px,
@@ -202,11 +260,11 @@ impl Strip {
             + tab[y * w1 + x]
     }
 
-    /// Normalized cross-correlation at every valid window position, row-major.
-    fn scores(&self, tpl: &Template) -> Vec<Hit> {
-        let (tw, th) = (tpl.w as usize, tpl.h as usize);
+    /// Best normalized cross-correlation over every valid window position.
+    fn best(&self, pat: &Pattern) -> Option<(u32, u32, f32)> {
+        let (tw, th) = (pat.w as usize, pat.h as usize);
         if self.w < tw || self.h < th {
-            return Vec::new();
+            return None;
         }
         let n = (tw * th) as f64;
         let w1 = self.w + 1;
@@ -218,7 +276,7 @@ impl Strip {
                     for ty in 0..th {
                         let start = ((y + ty) * self.w + x) * 3;
                         let win = &self.px[start..start + tw * 3];
-                        let row = &tpl.zero_mean[ty * tw * 3..(ty + 1) * tw * 3];
+                        let row = &pat.zero_mean[ty * tw * 3..(ty + 1) * tw * 3];
                         num += win.iter().zip(row).map(|(a, b)| a * b).sum::<f32>();
                     }
                     let var: f64 = (0..3)
@@ -228,19 +286,14 @@ impl Strip {
                         })
                         .sum();
                     let score = if var > 1e-6 {
-                        num / (var.sqrt() as f32 * tpl.norm)
+                        num / (var.sqrt() as f32 * pat.norm)
                     } else {
                         0.0
                     };
-                    Hit {
-                        item: tpl.item,
-                        x: self.x0 + x as u32,
-                        y: y as u32,
-                        score,
-                    }
+                    (self.x0 + x as u32, self.y0 + y as u32, score)
                 })
             })
-            .collect()
+            .max_by(|a, b| a.2.total_cmp(&b.2))
     }
 }
 
@@ -248,7 +301,7 @@ impl Strip {
 mod tests {
     use super::*;
 
-    fn strip(name: &str) -> RgbImage {
+    fn fixture(name: &str) -> RgbImage {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/");
         image::open(format!("{path}{name}.png")).unwrap().to_rgb8()
     }
@@ -280,7 +333,7 @@ mod tests {
             ("friendship", Item::Fb, 28, 468),
         ] {
             let hit = m
-                .scan(&strip(frame))
+                .scan(&fixture(frame))
                 .find(item)
                 .unwrap_or_else(|| panic!("{item:?} in {frame}"));
             assert!(hit.score >= 0.9, "{frame}: score {}", hit.score);
@@ -296,7 +349,7 @@ mod tests {
     fn no_false_positives_on_other_frames() {
         let m = matcher();
         for frame in FRAMES {
-            let img = strip(frame);
+            let img = fixture(frame);
             for item in Item::ALL {
                 // mid_swipe holds a half-scrolled mystic medal (scores ~0.87)
                 let expected = matches!(
@@ -334,5 +387,22 @@ mod tests {
         paste(&mut screen, 840);
         let hit = m.scan(&screen).find(Item::Fb).unwrap();
         assert_eq!((hit.x, hit.y), (840, 500));
+    }
+
+    #[test]
+    fn refresh_anchor_separates_shop_from_other_screens() {
+        // fixtures are the 280..540 x 940..1040 region of full frames
+        let anchor = Anchor::new(
+            Pattern::from_png(REFRESH_BUTTON, "refresh").unwrap(),
+            0..260,
+            0..100,
+            0.75,
+        );
+        let shop = anchor.score(&fixture("anchor_shop"));
+        let battle = anchor.score(&fixture("anchor_battle"));
+        assert!(shop >= 0.9, "shop {shop}");
+        assert!(battle < 0.5, "battle {battle}");
+        assert!(anchor.visible(&fixture("anchor_shop")));
+        assert!(!anchor.visible(&fixture("anchor_battle")));
     }
 }

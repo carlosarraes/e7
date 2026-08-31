@@ -4,14 +4,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use rand::Rng;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::adb::Adb;
 use crate::history::History;
 use crate::item::Item;
-use crate::matcher::{Hit, Matcher, SCREEN_H, SCREEN_W};
+use crate::matcher::{Anchor, Hit, Matcher, SCREEN_H, SCREEN_W};
 
 const SETTLE: Duration = Duration::from_millis(1500);
 const AFTER_SWIPE: Duration = Duration::from_secs(1);
@@ -71,6 +71,7 @@ pub struct Summary {
 pub struct Runner {
     adb: Adb,
     matcher: Matcher,
+    anchor: Anchor,
     cfg: Config,
     stop: Arc<AtomicBool>,
     history: Option<History>,
@@ -82,6 +83,7 @@ impl Runner {
     pub fn new(
         adb: Adb,
         matcher: Matcher,
+        anchor: Anchor,
         cfg: Config,
         stop: Arc<AtomicBool>,
         history: Option<History>,
@@ -90,6 +92,7 @@ impl Runner {
         Self {
             adb,
             matcher,
+            anchor,
             cfg,
             stop,
             history,
@@ -134,7 +137,9 @@ impl Runner {
             }
             sleep(SETTLE);
             let mut bought = HashSet::new();
-            self.scan_and_buy(&mut bought)?;
+            if !self.scan_and_buy(&mut bought)? {
+                return self.left_shop();
+            }
             if self.stopped() {
                 return Ok(());
             }
@@ -142,7 +147,9 @@ impl Runner {
             let ((x1, y1), (x2, y2)) = (a.px(), b.px());
             self.adb.swipe(x1, y1, x2, y2)?;
             sleep(AFTER_SWIPE);
-            self.scan_and_buy(&mut bought)?;
+            if !self.scan_and_buy(&mut bought)? {
+                return self.left_shop();
+            }
             if self.stopped() || self.done >= self.cfg.refreshes {
                 return Ok(());
             }
@@ -153,8 +160,22 @@ impl Runner {
         }
     }
 
-    fn scan_and_buy(&mut self, bought: &mut HashSet<Item>) -> Result<()> {
+    /// The Refresh button is gone: never tap into whatever screen replaced the shop.
+    fn left_shop(&mut self) -> Result<()> {
+        if self.done == 0 {
+            bail!("Secret Shop not detected: open it in landscape and retry");
+        }
+        warn!("Secret Shop no longer visible, stopping");
+        self.stop.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Returns false when the screen is not the Secret Shop (nothing is tapped then).
+    fn scan_and_buy(&mut self, bought: &mut HashSet<Item>) -> Result<bool> {
         let screen = self.adb.screencap()?;
+        if !self.anchor.visible(&screen) {
+            return Ok(false);
+        }
         let hits: Vec<Hit> = {
             let scan = self.matcher.scan(&screen);
             self.cfg
@@ -181,7 +202,7 @@ impl Runner {
             bought.insert(hit.item);
             self.record(hit.item)?;
         }
-        Ok(())
+        Ok(true)
     }
 
     fn record(&mut self, item: Item) -> Result<()> {
@@ -216,6 +237,14 @@ impl Runner {
         while self.done < self.cfg.refreshes && !self.stopped() {
             let screen = self.adb.screencap()?;
             self.done += 1;
+            if !self.anchor.visible(&screen) {
+                warn!(
+                    "[{}/{}] Secret Shop not visible (refresh button score {:.3})",
+                    self.done,
+                    self.cfg.refreshes,
+                    self.anchor.score(&screen)
+                );
+            }
             let bests: Vec<Hit> = {
                 let scan = self.matcher.scan(&screen);
                 self.cfg
