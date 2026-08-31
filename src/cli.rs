@@ -65,7 +65,10 @@ impl RunArgs {
         }
         let skystones = self.skystones.expect("clap enforces the limit group");
         let n = skystones / SKYSTONES_PER_REFRESH;
-        ensure!(n > 0, "--skystones must be at least {SKYSTONES_PER_REFRESH}");
+        ensure!(
+            n > 0,
+            "--skystones must be at least {SKYSTONES_PER_REFRESH}"
+        );
         Ok(n)
     }
 }
@@ -112,7 +115,9 @@ mod tests {
 
     #[test]
     fn limit_flags_are_exclusive_and_required() {
-        assert!(Cli::try_parse_from(["e7", "run", "--refreshes", "1", "--skystones", "3"]).is_err());
+        assert!(
+            Cli::try_parse_from(["e7", "run", "--refreshes", "1", "--skystones", "3"]).is_err()
+        );
         assert!(Cli::try_parse_from(["e7", "run"]).is_err());
     }
 

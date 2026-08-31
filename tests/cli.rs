@@ -9,7 +9,11 @@ fn help_lists_subcommands() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(contains("run").and(contains("devices")).and(contains("screenshot")));
+        .stdout(
+            contains("run")
+                .and(contains("devices"))
+                .and(contains("screenshot")),
+        );
 }
 
 #[test]

@@ -96,7 +96,15 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0], "timestamp,run_id,refresh,event,item,gold");
         assert_eq!(lines.len(), 3);
-        assert!(lines[1].ends_with(",run1,3,bought,covenant,184000"), "{}", lines[1]);
-        assert!(lines[2].ends_with(",run2,10,run_end,,184000"), "{}", lines[2]);
+        assert!(
+            lines[1].ends_with(",run1,3,bought,covenant,184000"),
+            "{}",
+            lines[1]
+        );
+        assert!(
+            lines[2].ends_with(",run2,10,run_end,,184000"),
+            "{}",
+            lines[2]
+        );
     }
 }

@@ -11,6 +11,7 @@ pub enum Item {
 }
 
 impl Item {
+    #[cfg(test)]
     pub const ALL: [Item; 3] = [Item::Cov, Item::Mys, Item::Fb];
 
     pub fn name(self) -> &'static str {

@@ -35,15 +35,9 @@ impl DisplayGuard {
         let (w, h) = adb.screencap()?.dimensions();
         if (w, h) != (SCREEN_W, SCREEN_H) {
             guard.reset();
-            bail!(
-                "display override failed, screen is {w}x{h} (is the game open in landscape?)"
-            );
+            bail!("display override failed, screen is {w}x{h} (is the game open in landscape?)");
         }
         Ok(guard)
-    }
-
-    pub fn overridden(&self) -> bool {
-        self.overridden
     }
 
     pub fn reset(&mut self) {

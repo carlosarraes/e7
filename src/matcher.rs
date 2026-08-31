@@ -110,7 +110,8 @@ impl Matcher {
 
     /// Best-scoring position, if it clears the threshold.
     pub fn find(&self, screen: &RgbImage, item: Item) -> Option<Hit> {
-        self.best(screen, item).filter(|h| h.score >= self.threshold)
+        self.best(screen, item)
+            .filter(|h| h.score >= self.threshold)
     }
 
     /// Highest-scoring position regardless of threshold (for diagnostics).
