@@ -120,16 +120,6 @@ impl Matcher {
         }
     }
 
-    /// Best-scoring position, if it clears the threshold.
-    pub fn find(&self, screen: &RgbImage, item: Item) -> Option<Hit> {
-        self.scan(screen).find(item)
-    }
-
-    /// Highest-scoring position regardless of threshold (for diagnostics).
-    pub fn best(&self, screen: &RgbImage, item: Item) -> Option<Hit> {
-        self.scan(screen).best(item)
-    }
-
     fn template(&self, item: Item) -> Option<&Template> {
         self.templates.iter().find(|t| t.item == item)
     }
@@ -290,7 +280,8 @@ mod tests {
             ("friendship", Item::Fb, 28, 468),
         ] {
             let hit = m
-                .find(&strip(frame), item)
+                .scan(&strip(frame))
+                .find(item)
                 .unwrap_or_else(|| panic!("{item:?} in {frame}"));
             assert!(hit.score >= 0.9, "{frame}: score {}", hit.score);
             assert!(
@@ -319,7 +310,7 @@ mod tests {
                 if expected {
                     continue;
                 }
-                let best = m.best(&img, item).map(|h| h.score).unwrap_or(0.0);
+                let best = m.scan(&img).best(item).map(|h| h.score).unwrap_or(0.0);
                 assert!(best < 0.7, "{frame}/{item:?}: {best}");
             }
         }
@@ -339,9 +330,9 @@ mod tests {
         };
         let m = Matcher::new(vec![tpl], 0.75, default_column());
         paste(&mut screen, 100);
-        assert!(m.find(&screen, Item::Fb).is_none());
+        assert!(m.scan(&screen).find(Item::Fb).is_none());
         paste(&mut screen, 840);
-        let hit = m.find(&screen, Item::Fb).unwrap();
+        let hit = m.scan(&screen).find(Item::Fb).unwrap();
         assert_eq!((hit.x, hit.y), (840, 500));
     }
 }
