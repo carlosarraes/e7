@@ -4,6 +4,7 @@ mod display;
 mod history;
 mod item;
 mod matcher;
+mod shop;
 
 use anyhow::Result;
 use clap::Parser;
