@@ -155,11 +155,12 @@ impl Runner {
 
     fn scan_and_buy(&mut self, bought: &mut HashSet<Item>) -> Result<()> {
         let screen = self.adb.screencap()?;
+        let scan = self.matcher.scan(&screen);
         for item in self.cfg.items.clone() {
             if bought.contains(&item) || self.stopped() {
                 continue;
             }
-            let Some(hit) = self.matcher.find(&screen, item) else {
+            let Some(hit) = scan.find(item) else {
                 continue;
             };
             debug!(
@@ -209,12 +210,13 @@ impl Runner {
     fn dry_run(&mut self) -> Result<()> {
         while self.done < self.cfg.refreshes && !self.stopped() {
             let screen = self.adb.screencap()?;
+            let scan = self.matcher.scan(&screen);
             self.done += 1;
             for item in self.cfg.items.clone() {
-                let Some(best) = self.matcher.best(&screen, item) else {
+                let Some(best) = scan.best(item) else {
                     continue;
                 };
-                if self.matcher.find(&screen, item).is_some() {
+                if best.score >= self.matcher.threshold() {
                     info!(
                         "[{}/{}] {} found at ({}, {}) score {:.3}",
                         self.done,
