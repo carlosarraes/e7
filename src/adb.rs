@@ -91,6 +91,12 @@ impl Adb {
         self.run(&["shell", "wm", "size", "reset"]).map(drop)
     }
 
+    /// The active `wm size` override, if any.
+    pub fn wm_size_override(&self) -> Result<Option<(u32, u32)>> {
+        let out = self.run(&["shell", "wm", "size"])?;
+        Ok(parse_override(&String::from_utf8_lossy(&out)))
+    }
+
     fn run(&self, args: &[&str]) -> Result<Vec<u8>> {
         retry(args.join(" ").as_str(), || self.run_once(args))
     }
@@ -132,6 +138,14 @@ fn retry<T>(what: &str, mut op: impl FnMut() -> Result<T>) -> Result<T> {
     }
     Err(last.expect("at least one attempt"))
         .context(format!("adb {what} failed after {ATTEMPTS} attempts"))
+}
+
+pub fn parse_override(out: &str) -> Option<(u32, u32)> {
+    let line = out
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("Override size:"))?;
+    let (w, h) = line.trim().split_once('x')?;
+    Some((w.parse().ok()?, h.parse().ok()?))
 }
 
 pub fn parse_devices(out: &str) -> Vec<Device> {
@@ -184,6 +198,15 @@ mod tests {
         assert_eq!(d[0].serial, "192.168.15.14:5555");
         assert_eq!(d[0].state, "device");
         assert_eq!(d[1].state, "offline");
+    }
+
+    #[test]
+    fn parses_wm_size_override() {
+        assert_eq!(
+            parse_override("Physical size: 1440x3120\nOverride size: 1080x1920\n"),
+            Some((1080, 1920))
+        );
+        assert_eq!(parse_override("Physical size: 1440x3120\n"), None);
     }
 
     #[test]

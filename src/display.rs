@@ -21,6 +21,11 @@ impl DisplayGuard {
         };
         let (w, h) = adb.screencap()?.dimensions();
         if (w, h) == (SCREEN_W, SCREEN_H) {
+            // A previous run that died without cleaning up leaves its override behind; own it.
+            if adb.wm_size_override()? == Some((SCREEN_H, SCREEN_W)) {
+                info!("adopting an existing display override; it will be reset on exit");
+                guard.overridden = true;
+            }
             return Ok(guard);
         }
         if !allow_override {
