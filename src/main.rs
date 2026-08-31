@@ -1,6 +1,7 @@
 mod adb;
 mod cli;
 mod item;
+mod matcher;
 
 use anyhow::Result;
 use clap::Parser;
