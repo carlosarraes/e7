@@ -155,17 +155,22 @@ impl Runner {
 
     fn scan_and_buy(&mut self, bought: &mut HashSet<Item>) -> Result<()> {
         let screen = self.adb.screencap()?;
-        let scan = self.matcher.scan(&screen);
-        for item in self.cfg.items.clone() {
-            if bought.contains(&item) || self.stopped() {
-                continue;
+        let hits: Vec<Hit> = {
+            let scan = self.matcher.scan(&screen);
+            self.cfg
+                .items
+                .iter()
+                .filter(|i| !bought.contains(i))
+                .filter_map(|&i| scan.find(i))
+                .collect()
+        };
+        for hit in hits {
+            if self.stopped() {
+                break;
             }
-            let Some(hit) = scan.find(item) else {
-                continue;
-            };
             debug!(
                 "{} at ({}, {}) score {:.3}",
-                item.name(),
+                hit.item.name(),
                 hit.x,
                 hit.y,
                 hit.score
@@ -173,8 +178,8 @@ impl Runner {
             self.tap(Geometry::buy_point(&hit))?;
             self.tap(Geometry::BUY_CONFIRM.px())?;
             sleep(AFTER_BUY);
-            bought.insert(item);
-            self.record(item)?;
+            bought.insert(hit.item);
+            self.record(hit.item)?;
         }
         Ok(())
     }
@@ -210,23 +215,27 @@ impl Runner {
     fn dry_run(&mut self) -> Result<()> {
         while self.done < self.cfg.refreshes && !self.stopped() {
             let screen = self.adb.screencap()?;
-            let scan = self.matcher.scan(&screen);
             self.done += 1;
-            for item in self.cfg.items.clone() {
-                let Some(best) = scan.best(item) else {
-                    continue;
-                };
+            let bests: Vec<Hit> = {
+                let scan = self.matcher.scan(&screen);
+                self.cfg
+                    .items
+                    .iter()
+                    .filter_map(|&i| scan.best(i))
+                    .collect()
+            };
+            for best in bests {
                 if best.score >= self.matcher.threshold() {
                     info!(
                         "[{}/{}] {} found at ({}, {}) score {:.3}",
                         self.done,
                         self.cfg.refreshes,
-                        item.name(),
+                        best.item.name(),
                         best.x,
                         best.y,
                         best.score
                     );
-                    if let Some((_, n)) = self.counts.iter_mut().find(|(i, _)| *i == item) {
+                    if let Some((_, n)) = self.counts.iter_mut().find(|(i, _)| *i == best.item) {
                         *n += 1;
                     }
                 } else {
@@ -234,7 +243,7 @@ impl Runner {
                         "[{}/{}] {} best {:.3} at ({}, {})",
                         self.done,
                         self.cfg.refreshes,
-                        item.name(),
+                        best.item.name(),
                         best.score,
                         best.x,
                         best.y

@@ -108,24 +108,51 @@ impl Matcher {
         }
     }
 
+    pub fn threshold(&self) -> f32 {
+        self.threshold
+    }
+
+    /// Prepare one screenshot for matching every template against it.
+    pub fn scan<'a>(&'a self, screen: &RgbImage) -> Scan<'a> {
+        Scan {
+            matcher: self,
+            strip: Strip::new(screen, &self.col),
+        }
+    }
+
     /// Best-scoring position, if it clears the threshold.
     pub fn find(&self, screen: &RgbImage, item: Item) -> Option<Hit> {
-        self.best(screen, item)
-            .filter(|h| h.score >= self.threshold)
+        self.scan(screen).find(item)
     }
 
     /// Highest-scoring position regardless of threshold (for diagnostics).
     pub fn best(&self, screen: &RgbImage, item: Item) -> Option<Hit> {
-        let tpl = self.template(item)?;
-        let strip = Strip::new(screen, &self.col);
-        strip
-            .scores(tpl)
-            .into_iter()
-            .max_by(|a, b| a.score.total_cmp(&b.score))
+        self.scan(screen).best(item)
     }
 
     fn template(&self, item: Item) -> Option<&Template> {
         self.templates.iter().find(|t| t.item == item)
+    }
+}
+
+/// A screenshot's search column, built once and reused across templates.
+pub struct Scan<'a> {
+    matcher: &'a Matcher,
+    strip: Strip,
+}
+
+impl Scan<'_> {
+    pub fn find(&self, item: Item) -> Option<Hit> {
+        self.best(item)
+            .filter(|h| h.score >= self.matcher.threshold)
+    }
+
+    pub fn best(&self, item: Item) -> Option<Hit> {
+        let tpl = self.matcher.template(item)?;
+        self.strip
+            .scores(tpl)
+            .into_iter()
+            .max_by(|a, b| a.score.total_cmp(&b.score))
     }
 }
 
