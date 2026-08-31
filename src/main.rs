@@ -1,9 +1,13 @@
+mod cli;
+mod item;
+
 use clap::Parser;
 
-#[derive(Parser)]
-#[command(name = "e7", version, about)]
-struct Cli {}
-
 fn main() {
-    let _cli = Cli::parse();
+    let cli = cli::Cli::parse();
+    match cli.command {
+        cli::Command::Run(args) => println!("run {args:?}"),
+        cli::Command::Devices => println!("devices"),
+        cli::Command::Screenshot(args) => println!("screenshot {args:?}"),
+    }
 }
