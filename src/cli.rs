@@ -6,6 +6,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
 use crate::item::Item;
 
 pub const SKYSTONES_PER_REFRESH: u32 = 3;
+pub const LEAVES_PER_BUY: u32 = 5_100;
 
 #[derive(Parser, Debug)]
 #[command(name = "e7", version, about)]
@@ -21,6 +22,8 @@ pub struct Cli {
 pub enum Command {
     /// Refresh the secret shop and buy items (be on the Secret Shop screen first)
     Run(RunArgs),
+    /// Buy Penguin Nest 50-packs from the Growth Altar (be on the Growth Altar screen first)
+    Altar(AltarArgs),
     /// List adb devices
     Devices,
     /// Save a 1920x1080 screenshot (useful for cropping new templates)
@@ -69,6 +72,37 @@ impl RunArgs {
             n > 0,
             "--skystones must be at least {SKYSTONES_PER_REFRESH}"
         );
+        Ok(n)
+    }
+}
+
+#[derive(Args, Debug)]
+#[command(group(ArgGroup::new("limit").required(true)))]
+pub struct AltarArgs {
+    /// Number of 50-pack buys (5,100 leaves each)
+    #[arg(long, group = "limit", value_name = "N")]
+    pub buys: Option<u32>,
+    /// Leaf budget (converted to buys)
+    #[arg(long, group = "limit", value_name = "N")]
+    pub currency: Option<u32>,
+    /// Log anchor scores only; never tap. --buys counts screenshots.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// adb serial (required when more than one device is attached)
+    #[arg(long, value_name = "SERIAL")]
+    pub device: Option<String>,
+    #[arg(long, hide = true)]
+    pub no_display_override: bool,
+}
+
+impl AltarArgs {
+    pub fn buys(&self) -> Result<u32> {
+        if let Some(n) = self.buys {
+            return Ok(n);
+        }
+        let currency = self.currency.expect("clap enforces the limit group");
+        let n = currency / LEAVES_PER_BUY;
+        ensure!(n > 0, "--currency must be at least {LEAVES_PER_BUY}");
         Ok(n)
     }
 }
@@ -128,5 +162,32 @@ mod tests {
             run(&["--refreshes", "1", "--buy", "covenant,fb"]).buy,
             vec![Item::Cov, Item::Fb]
         );
+    }
+
+    fn altar(args: &[&str]) -> AltarArgs {
+        let mut argv = vec!["e7", "altar"];
+        argv.extend(args);
+        match Cli::try_parse_from(argv).unwrap().command {
+            Command::Altar(a) => a,
+            _ => panic!("expected altar"),
+        }
+    }
+
+    #[test]
+    fn currency_divides_by_leaves_per_buy() {
+        assert_eq!(altar(&["--currency", "100000"]).buys().unwrap(), 19);
+        assert_eq!(altar(&["--currency", "5100"]).buys().unwrap(), 1);
+        assert_eq!(altar(&["--buys", "4"]).buys().unwrap(), 4);
+    }
+
+    #[test]
+    fn too_little_currency_is_error() {
+        assert!(altar(&["--currency", "5099"]).buys().is_err());
+    }
+
+    #[test]
+    fn altar_limit_flags_are_exclusive_and_required() {
+        assert!(Cli::try_parse_from(["e7", "altar", "--buys", "1", "--currency", "5100"]).is_err());
+        assert!(Cli::try_parse_from(["e7", "altar"]).is_err());
     }
 }

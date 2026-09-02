@@ -24,6 +24,9 @@ pub fn embedded(item: Item) -> &'static [u8] {
 }
 
 const REFRESH_BUTTON: &[u8] = include_bytes!("../assets/refresh.png");
+const ALTAR_BUY: &[u8] = include_bytes!("../assets/altar_buy.png");
+const ALTAR_MAX: &[u8] = include_bytes!("../assets/altar_max.png");
+const ALTAR_CLOSE: &[u8] = include_bytes!("../assets/altar_close.png");
 
 /// A template prepared for normalized cross-correlation.
 pub struct Pattern {
@@ -184,6 +187,36 @@ impl Anchor {
             Pattern::from_png(REFRESH_BUTTON, "refresh button")?,
             280..540,
             940..1040,
+            0.75,
+        ))
+    }
+
+    /// The penguin "102 Buy" button on the Growth Altar; a price change fails the match.
+    pub fn altar_buy() -> Result<Self> {
+        Ok(Self::new(
+            Pattern::from_png(ALTAR_BUY, "altar buy button")?,
+            100..500,
+            750..860,
+            0.75,
+        ))
+    }
+
+    /// The "50/50" quantity label of the altar buy modal. "1/50" scores about 0.66.
+    pub fn altar_max() -> Result<Self> {
+        Ok(Self::new(
+            Pattern::from_png(ALTAR_MAX, "altar 50/50 label")?,
+            850..1070,
+            610..700,
+            0.9,
+        ))
+    }
+
+    /// "Tap to close" in the centre of the penguin reward popup (the altar's own sits at y 1040).
+    pub fn altar_close() -> Result<Self> {
+        Ok(Self::new(
+            Pattern::from_png(ALTAR_CLOSE, "altar popup close")?,
+            850..1070,
+            760..860,
             0.75,
         ))
     }
@@ -404,5 +437,48 @@ mod tests {
         assert!(battle < 0.5, "battle {battle}");
         assert!(anchor.visible(&fixture("anchor_shop")));
         assert!(!anchor.visible(&fixture("anchor_battle")));
+    }
+
+    #[test]
+    fn altar_anchors_separate_screen_modal_and_popup() {
+        // fixtures are the 100..1070 x 610..860 region of full frames
+        let anchor =
+            |bytes, xs, ys, t| Anchor::new(Pattern::from_png(bytes, "altar").unwrap(), xs, ys, t);
+        let buy = anchor(ALTAR_BUY, 0..400, 140..250, 0.75);
+        let max = anchor(ALTAR_MAX, 750..970, 0..90, 0.9);
+        let close = anchor(ALTAR_CLOSE, 750..970, 150..250, 0.75);
+        let screen = fixture("altar_screen");
+        let modal = fixture("altar_modal_max");
+        let one = fixture("altar_modal_one");
+        let popup = fixture("altar_popup");
+
+        assert!(buy.visible(&screen));
+        assert!(
+            buy.score(&modal) < 0.5,
+            "buy under modal {}",
+            buy.score(&modal)
+        );
+        assert!(
+            buy.score(&popup) < 0.5,
+            "buy under popup {}",
+            buy.score(&popup)
+        );
+
+        assert!(max.visible(&modal));
+        assert!(max.score(&one) < 0.75, "1/50 vs 50/50 {}", max.score(&one));
+        assert!(max.score(&screen) < 0.5);
+        assert!(max.score(&popup) < 0.5);
+
+        assert!(close.visible(&popup));
+        assert!(
+            close.score(&screen) < 0.3,
+            "close on altar {}",
+            close.score(&screen)
+        );
+        assert!(
+            close.score(&modal) < 0.3,
+            "close on modal {}",
+            close.score(&modal)
+        );
     }
 }

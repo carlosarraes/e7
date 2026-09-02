@@ -1,4 +1,5 @@
 mod adb;
+mod altar;
 mod cli;
 mod display;
 mod history;
@@ -61,6 +62,7 @@ fn dispatch(command: cli::Command) -> Result<()> {
             println!("{}", out.display());
         }
         cli::Command::Run(args) => run(args)?,
+        cli::Command::Altar(args) => altar(args)?,
     }
     Ok(())
 }
@@ -127,6 +129,55 @@ fn run(args: cli::RunArgs) -> Result<()> {
             "skystones {} · gold {}",
             summary.refreshes * cli::SKYSTONES_PER_REFRESH,
             summary.gold
+        );
+    }
+    Ok(())
+}
+
+fn altar(args: cli::AltarArgs) -> Result<()> {
+    let buys = args.buys()?;
+    let adb = adb::Adb::pick(args.device.clone())?;
+    let _guard = display::DisplayGuard::acquire(&adb, !args.no_display_override)?;
+    let anchors = altar::Anchors::load()?;
+
+    let stop = Arc::new(AtomicBool::new(false));
+    install_ctrlc(stop.clone(), adb.clone());
+
+    info!(
+        "device {} · {} {} · Ctrl+C to stop",
+        adb.serial().unwrap_or("?"),
+        buys,
+        if args.dry_run {
+            "screenshots (dry run)"
+        } else {
+            "penguin buys"
+        }
+    );
+
+    let cfg = altar::Config {
+        buys,
+        dry_run: args.dry_run,
+    };
+    let summary = altar::Runner::new(adb, anchors, cfg, stop).run()?;
+
+    let secs = summary.duration.as_secs();
+    info!(
+        "{} {} in {}m{:02}s{}",
+        if args.dry_run {
+            "screenshots:"
+        } else {
+            "buys:"
+        },
+        summary.buys,
+        secs / 60,
+        secs % 60,
+        if summary.stopped { " (stopped)" } else { "" }
+    );
+    if !args.dry_run {
+        info!(
+            "penguin nests {} · leaves {}",
+            summary.buys * altar::NESTS_PER_BUY,
+            summary.buys * cli::LEAVES_PER_BUY
         );
     }
     Ok(())
