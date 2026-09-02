@@ -157,6 +157,7 @@ fn altar(args: cli::AltarArgs) -> Result<()> {
     let cfg = altar::Config {
         buys,
         dry_run: args.dry_run,
+        tap_sleep: Duration::from_secs_f64(args.tap_sleep),
     };
     let summary = altar::Runner::new(adb, anchors, cfg, stop).run()?;
 

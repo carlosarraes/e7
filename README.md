@@ -19,6 +19,15 @@ Open the Secret Shop in game, then:
     e7 devices
     e7 screenshot                     # 1920x1080 png for cropping templates
 
+Open the Growth Altar (Forest of Souls) in game, then:
+
+    e7 altar --buys 10                # ten Penguin Nest 50-packs, 5,100 leaves each
+    e7 altar --currency 100000        # as many 50-packs as the leaves allow
+    e7 altar --dry-run --buys 3       # log anchor scores only, no taps
+
+Each buy opens the modal, forces the quantity to 50/50, confirms, and closes the
+reward popup. Any step whose screen is not recognised stops the run.
+
 Phones that are not 16:9 get a temporary `wm size 1080x1920` override
 (game shows black bars); it is reset when e7 exits. Ctrl+C stops after
 the current step; twice aborts.
@@ -31,3 +40,7 @@ History: `~/.local/share/e7/history.csv`, one row per purchase.
 1920x1080 screenshot. When the game changes item art, crop a new one from
 `e7 screenshot` output and pass `--templates-dir` (or replace the asset and
 rebuild).
+
+`assets/altar_{buy,max,close}.png` are the altar's penguin Buy button, the modal's
+"50/50" label and the reward popup's "Tap to close"; recrop them the same way if the
+altar art changes.

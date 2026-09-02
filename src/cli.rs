@@ -91,6 +91,9 @@ pub struct AltarArgs {
     /// adb serial (required when more than one device is attached)
     #[arg(long, value_name = "SERIAL")]
     pub device: Option<String>,
+    /// Pause between taps, in seconds
+    #[arg(long, default_value_t = 0.3, value_name = "SECS")]
+    pub tap_sleep: f64,
     #[arg(long, hide = true)]
     pub no_display_override: bool,
 }
