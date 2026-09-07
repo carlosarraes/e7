@@ -26,7 +26,8 @@ Open the Growth Altar (Forest of Souls) in game, then:
     e7 altar --dry-run --buys 3       # log anchor scores only, no taps
 
 Each buy opens the modal, forces the quantity to 50/50, confirms, and closes the
-reward popup. Any step whose screen is not recognised stops the run.
+reward popup. It waits up to ten seconds for the reward popup without repeating
+the purchase tap. Any step whose screen is not recognised stops the run.
 
 Phones that are not 16:9 get a temporary `wm size 1080x1920` override
 (game shows black bars); it is reset when e7 exits. Ctrl+C stops after

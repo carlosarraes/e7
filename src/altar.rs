@@ -15,6 +15,8 @@ const SETTLE: Duration = Duration::from_millis(1500);
 const AFTER_OPEN: Duration = Duration::from_secs(1);
 const AFTER_MAX: Duration = Duration::from_millis(500);
 const AFTER_BUY: Duration = Duration::from_secs(2);
+const POPUP_TIMEOUT: Duration = Duration::from_secs(10);
+const POPUP_POLL: Duration = Duration::from_millis(250);
 const AFTER_CLOSE: Duration = Duration::from_secs(1);
 
 /// Tap targets in the 1920x1080 frame, measured on 2026-09-02.
@@ -105,8 +107,10 @@ impl Runner {
                 return Ok(());
             }
             self.tap(Geometry::CONFIRM)?;
-            sleep(AFTER_BUY);
-            if !self.anchors.popup.visible(&self.adb.screencap()?) {
+            if !self.wait_for_popup()? {
+                if self.stopped() {
+                    return Ok(());
+                }
                 return self.popup_missing();
             }
             self.tap(Geometry::CLOSE)?;
@@ -118,6 +122,24 @@ impl Runner {
             );
         }
         Ok(())
+    }
+
+    /// A slow response or reward animation can outlast the initial settling time.
+    /// Only poll screenshots here: confirming again could buy an extra pack.
+    fn wait_for_popup(&self) -> Result<bool> {
+        let start = Instant::now();
+        sleep(AFTER_BUY);
+        while !self.stopped() {
+            if self.anchors.popup.visible(&self.adb.screencap()?) {
+                return Ok(true);
+            }
+            if start.elapsed() >= POPUP_TIMEOUT {
+                break;
+            }
+            debug!("waiting for penguin reward popup");
+            sleep(POPUP_POLL);
+        }
+        Ok(false)
     }
 
     /// The modal remembers the last quantity bought, so Max is only tapped when 50/50 is
@@ -150,7 +172,7 @@ impl Runner {
 
     /// No reward popup after confirming: the buy is not counted and the run stops.
     fn popup_missing(&mut self) -> Result<()> {
-        warn!("no reward popup after buying, stopping (out of leaves?)");
+        warn!("reward popup not detected within 10 seconds after buying, stopping");
         self.stop.store(true, Ordering::SeqCst);
         Ok(())
     }
